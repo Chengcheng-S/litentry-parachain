@@ -33,9 +33,9 @@ use frame_support::{
 };
 use frame_system as system;
 pub use mock_tee_primitives::{
-	EthereumSignature, EvmNetwork, Identity, IdentityHandle, IdentityMultiSignature,
-	IdentityWebType, SubstrateNetwork, TwitterValidationData, UserShieldingKeyType, ValidationData,
-	Web2Network, Web2ValidationData, Web3CommonValidationData, Web3Network, Web3ValidationData,
+	EthereumSignature, EvmNetwork, Identity, IdentityMultiSignature, IdentityString,
+	SubstrateNetwork, TwitterValidationData, UserShieldingKeyType, ValidationData, Web2Network,
+	Web2ValidationData, Web3CommonValidationData, Web3ValidationData,
 };
 pub use parity_crypto::publickey::{sign, Generator, KeyPair as EvmPair, Message, Random};
 use sp_core::sr25519::Pair as SubstratePair; // TODO: maybe use more generic struct
@@ -141,26 +141,17 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
 }
 
 pub fn create_mock_twitter_identity(twitter_handle: &[u8]) -> Identity {
-	Identity {
-		web_type: IdentityWebType::Web2(Web2Network::Twitter),
-		handle: IdentityHandle::String(
-			twitter_handle.to_vec().try_into().expect("convert to BoundedVec failed"),
-		),
-	}
+	let address =
+		IdentityString::try_from(twitter_handle.to_vec()).expect("convert to BoundedVec failed");
+	Identity::Web2 { network: Web2Network::Twitter, address }
 }
 
 pub fn create_mock_polkadot_identity(address: [u8; 32]) -> Identity {
-	Identity {
-		web_type: IdentityWebType::Web3(Web3Network::Substrate(SubstrateNetwork::Polkadot)),
-		handle: IdentityHandle::Address32(address),
-	}
+	Identity::Substrate { network: SubstrateNetwork::Polkadot, address: address.into() }
 }
 
 pub fn create_mock_eth_identity(address: [u8; 20]) -> Identity {
-	Identity {
-		web_type: IdentityWebType::Web3(Web3Network::Evm(EvmNetwork::Ethereum)),
-		handle: IdentityHandle::Address20(address),
-	}
+	Identity::Evm { network: EvmNetwork::Ethereum, address: address.into() }
 }
 
 pub fn create_mock_twitter_validation_data() -> ValidationData {
@@ -173,11 +164,16 @@ pub fn create_mock_polkadot_validation_data(
 	who: <Test as frame_system::Config>::AccountId,
 	p: SubstratePair,
 	code: ChallengeCode,
+	is_wrapped_signature: bool,
 ) -> ValidationData {
 	let identity = create_mock_polkadot_identity(p.public().0);
-	let msg = IdentityManagementMock::get_expected_payload(&who, &identity, &code)
+	let msg = IdentityManagementMock::get_expected_raw_message(&who, &identity, &code)
 		.expect("cannot calculate web3 message");
-	let sig = p.sign(&msg);
+	let mut sig = p.sign(&msg);
+
+	if !is_wrapped_signature {
+		sig = p.sign(&IdentityManagementMock::get_expected_wrapped_message(msg.clone()));
+	}
 
 	let common_validation_data = Web3CommonValidationData {
 		message: msg.try_into().unwrap(),
@@ -192,7 +188,7 @@ pub fn create_mock_eth_validation_data(
 	code: ChallengeCode,
 ) -> ValidationData {
 	let identity = create_mock_eth_identity(p.address().0);
-	let msg = IdentityManagementMock::get_expected_payload(&who, &identity, &code)
+	let msg = IdentityManagementMock::get_expected_raw_message(&who, &identity, &code)
 		.expect("cannot calculate web3 message");
 	let digest = IdentityManagementMock::compute_evm_msg_digest(&msg);
 	let sig = sign(p.secret(), &Message::from(digest)).unwrap();
@@ -281,9 +277,13 @@ pub fn setup_verify_twitter_identity(
 ) {
 	setup_create_identity(who, identity.clone(), bn);
 	let encrypted_identity = tee_encrypt(identity.encode().as_slice());
-	let validation_data = match &identity.web_type {
-		IdentityWebType::Web2(Web2Network::Twitter) => create_mock_twitter_validation_data(),
-		_ => panic!("unxpected web_type"),
+	let validation_data = if let Identity::Web2 { network, .. } = &identity {
+		match network {
+			Web2Network::Twitter => create_mock_twitter_validation_data(),
+			_ => panic!("unexpected network, expect twitter network"),
+		}
+	} else {
+		panic!("invalid identity type")
 	};
 	assert_ok!(IdentityManagementMock::verify_identity(
 		RuntimeOrigin::signed(who),
@@ -291,32 +291,42 @@ pub fn setup_verify_twitter_identity(
 		encrypted_identity,
 		tee_encrypt(validation_data.encode().as_slice()),
 	));
+	System::assert_has_event(RuntimeEvent::IdentityManagementMock(
+		crate::Event::IdentityVerifiedPlain {
+			account: who,
+			identity,
+			id_graph: IdentityManagementMock::get_id_graph(&who),
+		},
+	));
 }
 
 pub fn setup_verify_polkadot_identity(
 	who: <Test as frame_system::Config>::AccountId,
 	p: SubstratePair,
 	bn: <Test as frame_system::Config>::BlockNumber,
+	is_wrapped_signature: bool,
 ) {
 	let identity = create_mock_polkadot_identity(p.public().0);
 	setup_create_identity(who, identity.clone(), bn);
 	let encrypted_identity = tee_encrypt(identity.encode().as_slice());
 	let code = IdentityManagementMock::challenge_codes(&who, &identity).unwrap();
-	let validation_data = match &identity.web_type {
-		IdentityWebType::Web3(Web3Network::Substrate(SubstrateNetwork::Polkadot)) =>
-			create_mock_polkadot_validation_data(who, p, code),
-		_ => panic!("unxpected web_type"),
+	let validation_data = if let Identity::Substrate { .. } = &identity {
+		create_mock_polkadot_validation_data(who, p, code, is_wrapped_signature)
+	} else {
+		panic!("unxpected network")
 	};
-	println!(
-		"encoded identity len = {}, encoded vd len = {}",
-		identity.encode().as_slice().len(),
-		validation_data.encode().as_slice().len()
-	);
 	assert_ok!(IdentityManagementMock::verify_identity(
 		RuntimeOrigin::signed(who),
 		H256::random(),
 		encrypted_identity,
 		tee_encrypt(validation_data.encode().as_slice()),
+	));
+	System::assert_has_event(RuntimeEvent::IdentityManagementMock(
+		crate::Event::IdentityVerifiedPlain {
+			account: who,
+			identity,
+			id_graph: IdentityManagementMock::get_id_graph(&who),
+		},
 	));
 }
 
@@ -329,15 +339,22 @@ pub fn setup_verify_eth_identity(
 	setup_create_identity(who, identity.clone(), bn);
 	let encrypted_identity = tee_encrypt(identity.encode().as_slice());
 	let code = IdentityManagementMock::challenge_codes(&who, &identity).unwrap();
-	let validation_data = match &identity.web_type {
-		IdentityWebType::Web3(Web3Network::Evm(EvmNetwork::Ethereum)) =>
-			create_mock_eth_validation_data(who, p, code),
-		_ => panic!("unxpected web_type"),
+	let validation_data = if let Identity::Evm { .. } = identity {
+		create_mock_eth_validation_data(who, p, code)
+	} else {
+		panic!("unexpected network, expect Evm")
 	};
 	assert_ok!(IdentityManagementMock::verify_identity(
 		RuntimeOrigin::signed(who),
 		H256::random(),
 		encrypted_identity,
 		tee_encrypt(validation_data.encode().as_slice()),
+	));
+	System::assert_has_event(RuntimeEvent::IdentityManagementMock(
+		crate::Event::IdentityVerifiedPlain {
+			account: who,
+			identity,
+			id_graph: IdentityManagementMock::get_id_graph(&who),
+		},
 	));
 }

@@ -27,7 +27,7 @@ itp-top-pool-author = { path = "../top-pool-author", default-features = false }
 itp-types = { path = "../types", default-features = false }
 
 # scs
-substrate-api-client = { default-features = false, git = "https://github.com/scs/substrate-api-client.git", branch = "polkadot-v0.9.32" }
+substrate-api-client = { default-features = false, git = "https://github.com/scs/substrate-api-client.git", branch = "polkadot-v0.9.36" }
 
 # sgx enabled external libraries
 thiserror_sgx = { optional = true, package = "thiserror", git = "https://github.com/mesalock-linux/thiserror-sgx", tag = "sgx_1.1.3" }
@@ -40,8 +40,8 @@ codec = { package = "parity-scale-codec", version = "3.0.0", default-features = 
 log = { version = "0.4", default-features = false }
 
 # substrate dependencies
-sp-core = { default-features = false, features = ["full_crypto"], git = "https://github.com/paritytech/substrate.git", branch = "polkadot-v0.9.32" }
-sp-runtime = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "polkadot-v0.9.32" }
+sp-core = { default-features = false, features = ["full_crypto"], git = "https://github.com/paritytech/substrate.git", branch = "polkadot-v0.9.36" }
+sp-runtime = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "polkadot-v0.9.36" }
 
 # dev dependencies
 itc-parentchain-test = { path = "../../core/parentchain/test", optional = true, default-features = false }
@@ -54,19 +54,6 @@ itp-stf-state-observer = { path = "../stf-state-observer", features = ["mocks"] 
 [features]
 default = ["std"]
 mocks = []
-sgx = [
-    "sgx_tstd",
-    "ita-stf/sgx",
-    "itp-node-api/sgx",
-    "itp-sgx-crypto/sgx",
-    "itp-sgx-externalities/sgx",
-    "itp-stf-state-handler/sgx",
-    "itp-stf-state-observer/sgx",
-    "itp-top-pool-author/sgx",
-    "itp-storage/sgx",
-    "itp-time-utils/sgx",
-    "thiserror_sgx",
-]
 std = [
     # local
     "ita-stf/std",
@@ -91,6 +78,19 @@ std = [
     "sp-core/std",
     "sp-runtime/std",
     "thiserror",
+]
+sgx = [
+    "sgx_tstd",
+    "ita-stf/sgx",
+    "itp-node-api/sgx",
+    "itp-sgx-crypto/sgx",
+    "itp-sgx-externalities/sgx",
+    "itp-stf-state-handler/sgx",
+    "itp-stf-state-observer/sgx",
+    "itp-top-pool-author/sgx",
+    "itp-storage/sgx",
+    "itp-time-utils/sgx",
+    "thiserror_sgx",
 ]
 test = [
     "itc-parentchain-test",
