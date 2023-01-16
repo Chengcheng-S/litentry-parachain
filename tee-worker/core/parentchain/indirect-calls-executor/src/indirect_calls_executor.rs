@@ -27,7 +27,7 @@ use futures::executor;
 use ita_sgx_runtime::{pallet_imt::MetadataOf, Runtime};
 use ita_stf::{TrustedCall, TrustedOperation};
 use itp_node_api::{
-	api_client::ParentchainUncheckedExtrinsic,
+	api_client::{ParentchainUncheckedExtrinsic, ParentchainUncheckedExtrinsicWithStatus},
 	metadata::{
 		pallet_imp::IMPCallIndexes, pallet_teerex::TeerexCallIndexes, pallet_vcmp::VCMPCallIndexes,
 		provider::AccessNodeMetadata,
@@ -215,9 +215,10 @@ impl<ShieldingKeyRepository, StfEnclaveSigner, TopPoolAuthor, NodeMetadataProvid
 			let encoded_xt_opaque = xt_opaque.encode();
 
 			// Found ShieldFunds extrinsic in block.
-			if let Ok(xt) = ParentchainUncheckedExtrinsic::<ShieldFundsFn>::decode(
+			if let Ok(xt) = ParentchainUncheckedExtrinsicWithStatus::<ShieldFundsFn>::decode(
 				&mut encoded_xt_opaque.as_slice(),
 			) {
+				let xt = xt.xt;
 				if self.is_shield_funds_function(&xt.function.0) {
 					let hash_of_xt = hash_of(&xt);
 
@@ -235,9 +236,10 @@ impl<ShieldingKeyRepository, StfEnclaveSigner, TopPoolAuthor, NodeMetadataProvid
 
 			// Found CallWorker extrinsic in block.
 			// No else-if here! Because the same opaque extrinsic can contain multiple Fns at once (this lead to intermittent M6 failures)
-			if let Ok(xt) = ParentchainUncheckedExtrinsic::<CallWorkerFn>::decode(
+			if let Ok(xt) = ParentchainUncheckedExtrinsicWithStatus::<CallWorkerFn>::decode(
 				&mut encoded_xt_opaque.as_slice(),
 			) {
+				let xt = xt.xt;
 				if self.is_call_worker_function(&xt.function.0) {
 					let (_, request) = xt.function;
 					let (shard, cypher_text) = (request.shard, request.cyphertext);
@@ -248,9 +250,10 @@ impl<ShieldingKeyRepository, StfEnclaveSigner, TopPoolAuthor, NodeMetadataProvid
 
 			// litentry
 			// Found SetUserShieldingKey extrinsic
-			if let Ok(xt) = ParentchainUncheckedExtrinsic::<SetUserShieldingKeyFn>::decode(
+			if let Ok(xt) = ParentchainUncheckedExtrinsicWithStatus::<SetUserShieldingKeyFn>::decode(
 				&mut encoded_xt_opaque.as_slice(),
 			) {
+				let xt = xt.xt;
 				if self.is_set_user_shielding_key_function(&xt.function.0) {
 					let (_, shard, encrypted_key) = xt.function;
 					let shielding_key = self.shielding_key_repo.retrieve_key()?;
@@ -280,10 +283,20 @@ impl<ShieldingKeyRepository, StfEnclaveSigner, TopPoolAuthor, NodeMetadataProvid
 			}
 
 			// Found CreateIdentityFn extrinsic
-			if let Ok(xt) = ParentchainUncheckedExtrinsic::<CreateIdentityFn>::decode(
+			if let Ok(ParentchainUncheckedExtrinsicWithStatus::<CreateIdentityFn> {
+				xt,
+				status: extrinsic_status,
+			}) = ParentchainUncheckedExtrinsicWithStatus::<CreateIdentityFn>::decode(
 				&mut encoded_xt_opaque.as_slice(),
 			) {
 				if self.is_create_identity_funciton(&xt.function.0) {
+					if !extrinsic_status {
+						warn!(
+							"create_identity fail to execute on parentchain. {:?} next extrinsic",
+							xt
+						);
+						continue
+					}
 					let (_, shard, account, encrypted_identity, encrypted_metadata) = xt.function;
 					let shielding_key = self.shielding_key_repo.retrieve_key()?;
 
@@ -322,9 +335,10 @@ impl<ShieldingKeyRepository, StfEnclaveSigner, TopPoolAuthor, NodeMetadataProvid
 			}
 
 			// Found RemoveIdentityFn extrinsic
-			if let Ok(xt) = ParentchainUncheckedExtrinsic::<RemoveIdentityFn>::decode(
+			if let Ok(xt) = ParentchainUncheckedExtrinsicWithStatus::<RemoveIdentityFn>::decode(
 				&mut encoded_xt_opaque.as_slice(),
 			) {
+				let xt = xt.xt;
 				if self.is_remove_identity_funciton(&xt.function.0) {
 					let (_, shard, encrypted_identity) = xt.function;
 					let shielding_key = self.shielding_key_repo.retrieve_key()?;
@@ -354,9 +368,10 @@ impl<ShieldingKeyRepository, StfEnclaveSigner, TopPoolAuthor, NodeMetadataProvid
 			}
 
 			// Found VerifyIdentity extrinsic
-			if let Ok(xt) = ParentchainUncheckedExtrinsic::<VerifyIdentityFn>::decode(
+			if let Ok(xt) = ParentchainUncheckedExtrinsicWithStatus::<VerifyIdentityFn>::decode(
 				&mut encoded_xt_opaque.as_slice(),
 			) {
+				let xt = xt.xt;
 				if self.is_verify_identity_funciton(&xt.function.0) {
 					let (_, shard, encrypted_identity, encrypted_validation_data) = xt.function;
 					let shielding_key = self.shielding_key_repo.retrieve_key()?;
@@ -393,9 +408,10 @@ impl<ShieldingKeyRepository, StfEnclaveSigner, TopPoolAuthor, NodeMetadataProvid
 			}
 
 			// Found RequestVC extrinsic
-			if let Ok(xt) = ParentchainUncheckedExtrinsic::<RequestVCFn>::decode(
+			if let Ok(xt) = ParentchainUncheckedExtrinsicWithStatus::<RequestVCFn>::decode(
 				&mut encoded_xt_opaque.as_slice(),
 			) {
+				let xt = xt.xt;
 				if self.is_request_vc_funciton(&xt.function.0) {
 					let (_, shard, assertion) = xt.function;
 					let shielding_key = self.shielding_key_repo.retrieve_key()?;
