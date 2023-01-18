@@ -4,18 +4,28 @@ on:
   release:
     types: [released]
 
-  workflow_dispatch:
-    inputs:
-      release_tag:
-        description: runtime.wasm release_tag
-        required: true
-
-env:
-  RELEASE_TAG: ${{ github.event.inputs.release_tag || github.event.release.tag_name }}
-
 jobs:
+  check runtime version:
+    run-on: ubuntu-latest
+    strategy:
+      matrix:
+        chain:
+          # litmus is not supported, as sudo was removed
+          # TODO: add runtime upgrade via governance
+          - litentry
+          - rococo
+    if: contains(github.event.release.body, '${{ matrix.chain }}-parachain-runtime.compact.compressed.wasm')
+    steps:
+    - name: check runtime version
+  #         get rococo && litentry runtime version by rpc call such as fork-off-substrate or other way && check if new ?
+  #         if not exit yes  continue.
+    run: |
+          echo "start check runtime version"
+          ./scripts/check-runtime-version
+
   simulate-runtime-upgrade:
     runs-on: ubuntu-latest
+    needs: check runtime version
     strategy:
       matrix:
         chain:
@@ -37,4 +47,4 @@ jobs:
       - name: Test runtime upgrade
         timeout-minutes: 10
         run: |
-          ./scripts/runtime-upgrade.sh https://github.com/litentry/litentry-parachain/releases/download/${{ env.RELEASE_TAG }}/${{ matrix.chain }}-parachain-runtime.compact.compressed.wasm
+          ./scripts/runtime-upgrade.sh https://github.com/litentry/litentry-parachain/releases/download/${{ github.event.release.tag_name }}/${{ matrix.chain }}-parachain-runtime.compact.compressed.wasm
