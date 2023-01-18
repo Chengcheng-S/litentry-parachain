@@ -19,9 +19,9 @@ jobs:
     - name: check runtime version
   #         get rococo && litentry runtime version by rpc call such as fork-off-substrate or other way && check if new ?
   #         if not exit yes  continue.
-    run: |
-          echo "start check runtime version"
-          ./scripts/check-runtime-version
+      run: |
+            echo "start check runtime version"
+            ./scripts/check-runtime-version
 
   simulate-runtime-upgrade:
     runs-on: ubuntu-latest
